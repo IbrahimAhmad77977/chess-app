@@ -4,23 +4,57 @@
 	import { supabaseClient } from '$lib/supabase';
 	import type { Square, Move } from 'chess.js';
 
+	let showPromotionModal = false;
+	let promotionFrom: string | null = null;
+	let promotionTo: string | null = null;
+	let sounds: { [key: string]: HTMLAudioElement } = {};
+
+	// Preload sounds when the component is mounted
+	onMount(() => {
+		// Preload sounds so they can be played without delay
+		sounds = {
+			move: new Audio('/sound/move.mp3'),
+			capture: new Audio('/sound/capture.mp3'),
+			check: new Audio('/sound/checkmate.mp3'),
+			castle: new Audio('/sound/draw.mp3'),
+			gameOver: new Audio('/sound/select.mp3')
+		};
+
+		// Ensure all sounds are loaded before playing
+		Object.values(sounds).forEach((audio) => {
+			audio.preload = 'auto';
+		});
+	});
+
+	function playMoveSound() {
+		if (sounds.move) sounds.move.play();
+	}
+
+	function playCaptureSound() {
+		if (sounds.capture) sounds.capture.play();
+	}
+
+	function playGameOverSound() {
+		if (sounds.gameOver) sounds.gameOver.play();
+	}
+
 	export let fen: string;
 	export let gameId: string;
+	let turn = '';
+	let statusMessage: string | null = null;
 
 	let game: Chess;
 	let board: (string | null)[][] = [];
 	let selectedSquare: string | null = null;
-	let currentPlayer: string;
-	export let currentTurn: string;
-	currentPlayer = currentTurn === 'b' ? 'black' : 'white';
+	let legalMoves: string[] = [];
 
 	const files = 'abcdefgh';
 
 	onMount(() => {
-		game = new Chess(fen); // Initialize chess game with the FEN passed from server
+		game = new Chess(fen);
 		updateBoard();
+		turn = game.turn();
 	});
-	let legalMoves: string[] = [];
 
 	function getLegalMoves(square: string): string[] {
 		try {
@@ -33,7 +67,7 @@
 
 	function updateBoard() {
 		board = [];
-		const fen = game.fen().split(' ')[0]; // FEN contains piece positions
+		const fen = game.fen().split(' ')[0];
 		const rows = fen.split('/');
 		for (let r = 0; r < 8; r++) {
 			let row = [];
@@ -72,54 +106,73 @@
 	}
 
 	async function makeMove(from: string, to: string) {
-		const move = game.move({ from, to });
+		const move = game.move({ from, to, promotion: 'q' }); // Try default first
 		if (move) {
-			// Check if the move is a pawn promotion
-			if (move.promotion && (move.to[1] === '8' || move.to[1] === '1')) {
-				// Handle promotion
-				const promotion = await promptPawnPromotion();
-				game.move({ from, to, promotion });
+			if (move.flags.includes('p') && (to[1] === '8' || to[1] === '1')) {
+				// Undo last move and open modal
+				game.undo();
+				promotionFrom = from;
+				promotionTo = to;
+				showPromotionModal = true;
+				return;
 			}
 
-			const fen = game.fen(); // Updated FEN after the move
-			const nextTurn = game.turn(); // Get the next player's turn
-			await saveMove(fen, nextTurn); // Update the game state
-			updateBoard(); // Update the board view after the move
+			const fen = game.fen();
+			turn = game.turn();
+			await saveMove(fen, turn);
+			updateBoard();
 
-			// Check for checkmate after the move is made
 			if (game.isGameOver()) {
 				if (game.isCheckmate()) {
-					alert(`${currentPlayer === 'white' ? 'Black' : 'White'} wins by checkmate!`);
+					statusMessage = `${turn === 'w' ? 'Black' : 'White'} wins by checkmate!`;
+					playGameOverSound();
+				} else if (game.isDraw()) {
+					statusMessage = 'Draw!';
+					playGameOverSound();
 				}
+			} else {
+				playMoveSound();
 			}
 		} else {
-			selectedSquare = null; // Invalid move, reset selection
+			selectedSquare = null;
 		}
 	}
 
-	async function promptPawnPromotion(): Promise<string> {
-		return new Promise((resolve) => {
-			// Show prompt for promotion (Q, R, B, N)
-			const promotion = prompt('Promote to (q, r, b, n):', 'q');
-			resolve(promotion || 'q'); // Default to Queen if no input
-		});
+	async function saveMove(fen: string, nextTurn: string) {
+		await supabaseClient.from('games').update({ fen }).eq('id', gameId);
 	}
 
-	async function saveMove(fen: string, nextTurn: string) {
-		// Save the updated game state (FEN) to the database
-		await supabaseClient.from('games').update({ fen }).eq('id', gameId);
+	async function promotePawn(piece: string) {
+		if (promotionFrom && promotionTo) {
+			game.move({ from: promotionFrom, to: promotionTo, promotion: piece });
+			const fen = game.fen();
+			turn = game.turn();
+			await saveMove(fen, turn);
+			updateBoard();
 
-		// Update current player based on the next turn
-		currentPlayer = nextTurn === 'w' ? 'white' : 'black';
+			if (game.isGameOver()) {
+				if (game.isCheckmate()) {
+					statusMessage = `${turn === 'w' ? 'Black' : 'White'} wins by checkmate!`;
+					playGameOverSound();
+				} else if (game.isDraw()) {
+					statusMessage = 'Draw!';
+					playGameOverSound();
+				}
+			}
+		}
+
+		showPromotionModal = false;
+		promotionFrom = null;
+		promotionTo = null;
 	}
 
 	function handleClick(row: number, col: number) {
+		if (game.isGameOver()) return;
 		const square = squareFromCoords(row, col) as Square;
 		const piece = board[row][col];
 
 		if (selectedSquare && legalMoves.includes(square)) {
-			game.move({ from: selectedSquare, to: square });
-			updateBoard();
+			makeMove(selectedSquare, square);
 			selectedSquare = null;
 			legalMoves = [];
 			return;
@@ -134,7 +187,7 @@
 		if (!isWhitePieceTurn && !isBlackPieceTurn) return;
 
 		selectedSquare = square;
-		legalMoves = game.moves({ square, verbose: true }).map((m) => m.to);
+		legalMoves = getLegalMoves(square);
 	}
 
 	function isWhitePiece(piece: string): boolean {
@@ -146,8 +199,24 @@
 	<div class="mb-6 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
 		<p class="text-lg text-gray-700">
-			{currentPlayer === 'white' ? "White's Turn" : "Black's Turn"}
+			{#if game}
+				{turn === 'w' ? "White's Turn" : "Black's Turn"}
+			{/if}
 		</p>
+		{#if statusMessage}
+			<div class="mt-4 text-xl font-semibold text-red-600">
+				{statusMessage}
+			</div>
+		{/if}
+		{#if showPromotionModal}
+			<div class="space-x-4 rounded-xl bg-white p-6 text-center text-3xl font-bold shadow-xl">
+				<p class="mb-4">Promote pawn to:</p>
+				<button on:click={() => promotePawn('q')}>♕</button>
+				<button on:click={() => promotePawn('r')}>♖</button>
+				<button on:click={() => promotePawn('b')}>♗</button>
+				<button on:click={() => promotePawn('n')}>♘</button>
+			</div>
+		{/if}
 	</div>
 
 	<div class="grid w-[32rem] grid-cols-8 border-4 border-gray-700">
