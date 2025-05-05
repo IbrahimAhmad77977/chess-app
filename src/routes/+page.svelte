@@ -8,6 +8,8 @@
 	let promotionFrom: string | null = null;
 	let promotionTo: string | null = null;
 	let sounds: { [key: string]: HTMLAudioElement } = {};
+	let moveHistory: Array<{ color: string; from: string; to: string; piece: string; san: string }> =
+		[];
 
 	// Preload sounds when the component is mounted
 	onMount(() => {
@@ -54,6 +56,7 @@
 		game = new Chess(fen);
 		updateBoard();
 		turn = game.turn();
+		moveHistory = game.history({ verbose: true }); // Initialize move history on page load
 	});
 
 	function getLegalMoves(square: string): string[] {
@@ -120,6 +123,7 @@
 			const fen = game.fen();
 			turn = game.turn();
 			await saveMove(fen, turn);
+			moveHistory = game.history({ verbose: true }); // Update move history after a move
 			updateBoard();
 
 			if (game.isGameOver()) {
@@ -148,6 +152,7 @@
 			const fen = game.fen();
 			turn = game.turn();
 			await saveMove(fen, turn);
+			moveHistory = game.history({ verbose: true }); // Update move history after promotion
 			updateBoard();
 
 			if (game.isGameOver()) {
@@ -195,7 +200,8 @@
 	}
 </script>
 
-<div class="flex min-h-screen flex-col items-center justify-center bg-gray-100">
+<div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">
+	<!-- Title and Turn Display -->
 	<div class="mb-6 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
 		<p class="text-lg text-gray-700">
@@ -209,17 +215,16 @@
 			</div>
 		{/if}
 		{#if showPromotionModal}
-			<div class="space-x-4 rounded-xl bg-white p-6 text-center text-3xl font-bold shadow-xl">
-				<p class="mb-4">Promote pawn to:</p>
-				<button on:click={() => promotePawn('q')}>♕</button>
-				<button on:click={() => promotePawn('r')}>♖</button>
-				<button on:click={() => promotePawn('b')}>♗</button>
-				<button on:click={() => promotePawn('n')}>♘</button>
-			</div>
+			<p class="mb-4">Promote pawn to:</p>
+			<button on:click={() => promotePawn('q')}>♕</button>
+			<button on:click={() => promotePawn('r')}>♖</button>
+			<button on:click={() => promotePawn('b')}>♗</button>
+			<button on:click={() => promotePawn('n')}>♘</button>
 		{/if}
 	</div>
 
-	<div class="grid w-[32rem] grid-cols-8 border-4 border-gray-700">
+	<!-- Chessboard -->
+	<div class="mb-6 grid w-[32rem] grid-cols-8 border-4 border-gray-700">
 		{#each board as row, rowIndex}
 			{#each row as piece, colIndex}
 				{@const square = squareFromCoords(rowIndex, colIndex)}
@@ -254,5 +259,19 @@
 				</div>
 			{/each}
 		{/each}
+	</div>
+
+	<!-- Move History -->
+	<div class="absolute top-4 right-4 w-48 rounded-lg bg-white p-4 shadow-lg">
+		<h3 class="mb-2 text-sm font-bold text-gray-700">Move History</h3>
+		<div class="space-y-1 text-sm text-gray-800">
+			{#each Array(Math.ceil(moveHistory.length / 2)) as _, i}
+				<div class="flex justify-between">
+					<span class="font-semibold">{i + 1}.</span>
+					<span>{moveHistory[i * 2]?.san ?? ''}</span>
+					<span>{moveHistory[i * 2 + 1]?.san ?? ''}</span>
+				</div>
+			{/each}
+		</div>
 	</div>
 </div>
