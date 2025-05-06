@@ -1,26 +1,36 @@
 import { supabaseClient } from '$lib/supabase';
 import { Chess } from 'chess.js';
+import { error } from '@sveltejs/kit'; // ✅ This was missing
 import type { PageServerLoad } from './$types';
 
-// Get the current game state from Supabase
-export const load: PageServerLoad = async ({ params }) => {
-	const gameId = params.id;
+const isValidUUID = (str: string) =>
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 
-	const { data, error } = await supabaseClient
+export const load: PageServerLoad = async ({ params }) => {
+	const { id } = params;
+
+	// ✅ Validate UUID to avoid favicon.png errors
+	if (!isValidUUID(id)) {
+		return []
+	}
+
+	const { data, error: supabaseError } = await supabaseClient
 		.from('games')
 		.select('fen, white_player_id, black_player_id')
-		.eq('id', gameId)
+		.eq('id', id)
 		.single();
 
-	if (error) throw new Error(error.message);
+	if (supabaseError || !data) {
+		throw error(404, 'Game not found');
+	}
 
 	const game = new Chess(data.fen);
 	const currentTurn = game.turn(); // 'w' or 'b'
 
 	return {
 		fen: game.fen(),
-		gameId,
-		currentTurn, // pass 'w' or 'b' to +page.svelte
+		gameId: id,
+		currentTurn,
 		whitePlayerId: data.white_player_id,
 		blackPlayerId: data.black_player_id
 	};
