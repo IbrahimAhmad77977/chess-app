@@ -1,4 +1,11 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+
+	async function logout() {
+		await supabaseClient.auth.signOut();
+		goto('/auth'); // Redirect to login page (adjust the path if needed)
+	}
+
 	import { onMount } from 'svelte';
 	import { Chess } from 'chess.js';
 	import { supabaseClient } from '$lib/supabase';
@@ -204,6 +211,12 @@
 	<!-- Title and Turn Display -->
 	<div class="mb-6 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
+		<form method="POST" action="?/logout">
+			<button type="submit" class="mt-4 rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600">
+				Logout
+			</button>
+		</form>
+
 		<p class="text-lg text-gray-700">
 			{#if game}
 				{turn === 'w' ? "White's Turn" : "Black's Turn"}
