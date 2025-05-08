@@ -22,11 +22,10 @@
 	onMount(() => {
 		// Preload sounds so they can be played without delay
 		sounds = {
-			move: new Audio('/sound/move.mp3'),
-			capture: new Audio('/sound/capture.mp3'),
-			check: new Audio('/sound/checkmate.mp3'),
-			castle: new Audio('/sound/draw.mp3'),
-			gameOver: new Audio('/sound/select.mp3')
+			move: new Audio('/sound/Move.mp3'),
+			capture: new Audio('/sound/Capture.mp3'),
+			select: new Audio('/sound/Select.mp3'),
+			game_over: new Audio('/sound/Game_Over.mp3')
 		};
 
 		// Ensure all sounds are loaded before playing
@@ -43,8 +42,12 @@
 		if (sounds.capture) sounds.capture.play();
 	}
 
+	function playSelectSound() {
+		if (sounds.select) sounds.select.play();
+	}
+
 	function playGameOverSound() {
-		if (sounds.gameOver) sounds.gameOver.play();
+		if (sounds.game_over) sounds.game_over.play();
 	}
 
 	export let fen: string;
@@ -135,14 +138,21 @@
 
 			if (game.isGameOver()) {
 				if (game.isCheckmate()) {
+					playGameOverSound();
+
 					statusMessage = `${turn === 'w' ? 'Black' : 'White'} wins by checkmate!`;
-					playGameOverSound();
 				} else if (game.isDraw()) {
-					statusMessage = 'Draw!';
 					playGameOverSound();
+
+					statusMessage = 'Draw!';
 				}
 			} else {
-				playMoveSound();
+				// 🟢 Play sound based on capture or normal move
+				if (move.captured) {
+					playCaptureSound();
+				} else {
+					playMoveSound();
+				}
 			}
 		} else {
 			selectedSquare = null;
@@ -155,20 +165,31 @@
 
 	async function promotePawn(piece: string) {
 		if (promotionFrom && promotionTo) {
-			game.move({ from: promotionFrom, to: promotionTo, promotion: piece });
-			const fen = game.fen();
-			turn = game.turn();
-			await saveMove(fen, turn);
-			moveHistory = game.history({ verbose: true }); // Update move history after promotion
-			updateBoard();
+			const move = game.move({ from: promotionFrom, to: promotionTo, promotion: piece });
 
-			if (game.isGameOver()) {
-				if (game.isCheckmate()) {
-					statusMessage = `${turn === 'w' ? 'Black' : 'White'} wins by checkmate!`;
-					playGameOverSound();
-				} else if (game.isDraw()) {
-					statusMessage = 'Draw!';
-					playGameOverSound();
+			if (move) {
+				const fen = game.fen();
+				turn = game.turn();
+				await saveMove(fen, turn);
+				moveHistory = game.history({ verbose: true }); // Update move history after promotion
+				updateBoard();
+
+				// 🔊 Play appropriate sound
+				if (move.captured) {
+					playCaptureSound();
+				} else {
+					playMoveSound();
+				}
+
+				if (game.isGameOver()) {
+					if (game.isCheckmate()) {
+						playGameOverSound();
+						statusMessage = `${turn === 'w' ? 'Black' : 'White'} wins by checkmate!`;
+					} else if (game.isDraw()) {
+						playGameOverSound();
+
+						statusMessage = 'Draw!';
+					}
 				}
 			}
 		}
@@ -180,9 +201,19 @@
 
 	function handleClick(row: number, col: number) {
 		if (game.isGameOver()) return;
+
 		const square = squareFromCoords(row, col) as Square;
 		const piece = board[row][col];
 
+		// 🟡 Deselect if the same square is clicked again
+		if (selectedSquare === square) {
+			selectedSquare = null;
+			legalMoves = [];
+			playSelectSound();
+			return;
+		}
+
+		// ✅ Make move if valid
 		if (selectedSquare && legalMoves.includes(square)) {
 			makeMove(selectedSquare, square);
 			selectedSquare = null;
@@ -200,6 +231,7 @@
 
 		selectedSquare = square;
 		legalMoves = getLegalMoves(square);
+		playSelectSound();
 	}
 
 	function isWhitePiece(piece: string): boolean {
