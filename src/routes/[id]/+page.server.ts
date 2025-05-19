@@ -1,6 +1,6 @@
 import { supabaseClient } from '$lib/supabase';
 import { Chess } from 'chess.js';
-import { error } from '@sveltejs/kit'; // ✅ This was missing
+import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 const isValidUUID = (str: string) =>
@@ -9,9 +9,8 @@ const isValidUUID = (str: string) =>
 export const load: PageServerLoad = async ({ params }) => {
 	const { id } = params;
 
-	// ✅ Validate UUID to avoid favicon.png errors
 	if (!isValidUUID(id)) {
-		return []
+		throw error(404, 'Invalid game ID');
 	}
 
 	const { data, error: supabaseError } = await supabaseClient
@@ -25,7 +24,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	}
 
 	const game = new Chess(data.fen);
-	const currentTurn = game.turn(); // 'w' or 'b'
+	const currentTurn = game.turn();
 
 	return {
 		fen: game.fen(),
