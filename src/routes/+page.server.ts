@@ -12,7 +12,6 @@ export const load: ServerLoad = async ({ locals }) => {
   const { data: users, error } = await supabase
     .from('accounts')
     .select('id, username') // Ensure you are selecting the correct columns
-    .neq('auth_user_id', user.id); // Exclude current user based on `auth_user_id`
 
   if (error) {
     console.error('Error fetching users:', error.message);

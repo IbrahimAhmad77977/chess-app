@@ -30,7 +30,6 @@ export const actions: Actions = {
       .insert({
         username: username,
         email: email,
-        auth_user_id: userId
       });
 
     if (insertError) {
