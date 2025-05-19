@@ -1,23 +1,43 @@
-import { redirect } from '@sveltejs/kit'
-import type { Actions } from './$types'
+import { redirect } from '@sveltejs/kit';
+import type { Actions } from './$types';
+
 export const actions: Actions = {
   signup: async ({ request, locals: { supabase } }) => {
-    const formData = await request.formData()
-    const username = formData.get('username') as string
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
-    const { error } = await supabase.auth.signUp({ email, password })
-    
-    if (error) {
-      console.error(error)
-      redirect(303, '/auth/error')
-    } else {
-      const { error } = await supabase
-  .from('accounts')
-  .insert({ username: username, email: email})
+    const formData = await request.formData();
+    const username = formData.get('username') as string;
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
 
-      redirect(303, '/')
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password
+    });
+
+    if (signUpError) {
+      console.error(signUpError);
+      throw redirect(303, '/auth/error');
     }
-    
+
+    const userId = signUpData.user?.id;
+
+    if (!userId) {
+      console.error('No user ID returned from signUp');
+      throw redirect(303, '/auth/error');
+    }
+
+    const { error: insertError } = await supabase
+      .from('accounts')
+      .insert({
+        username: username,
+        email: email,
+        auth_user_id: userId
+      });
+
+    if (insertError) {
+      console.error(insertError);
+      throw redirect(303, '/auth/error');
+    }
+
+    throw redirect(303, '/');
   }
-}
+};

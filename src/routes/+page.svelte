@@ -1,15 +1,79 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	async function logout() {
 		await supabaseClient.auth.signOut();
 		goto('/auth'); // Redirect to login page (adjust the path if needed)
 	}
+	onMount(async () => {
+		if (gameId) {
+			const { data: gameData, error } = await supabaseClient
+				.from('games')
+				.select('fen')
+				.eq('id', gameId)
+				.single();
 
+			if (error) {
+				console.error('Failed to load game:', error.message);
+				return;
+			}
+
+			if (gameData?.fen) {
+				game = new Chess(gameData.fen);
+			} else {
+				game = new Chess(); // fallback to default position
+			}
+		} else {
+			game = new Chess(fen); // if gameId not present, use prop
+		}
+
+		updateBoard();
+		turn = game.turn();
+		moveHistory = game.history({ verbose: true });
+	});
+
+	export let data;
+	// export let users: Array<{ id: string; username: string }>;
+	interface Game {
+		id: string; // Assuming the 'id' is a string (UUID or INT8)
+		player_white: string; // User ID of the player playing white
+		player_black: string; // User ID of the player playing black
+		fen: string; // FEN string representing the game state
+		current_turn: string; // Either 'w' or 'b' for white or black's turn
+	}
+
+	const currentUserId = 'your_current_user_id'; // Replace with actual user ID (e.g., from Supabase session)
+
+	async function startGame(opponentId: string) {
+		const { data, error } = await supabaseClient
+			.from('games') // Specify the table 'games' and the row type 'Game'
+			.insert([
+				{
+					player_white: currentUserId, // current user is White
+					player_black: opponentId, // opponent is Black
+					fen: 'start', // Initial FEN (standard chess start)
+					current_turn: 'w' // White always starts
+				}
+			])
+			.select('id') // Ensure we get the 'id' field in the response
+			.single(); // Expect a single record to be returned
+
+		if (error) {
+			console.error('Error creating game:', error.message);
+			return;
+		}
+
+		// Optionally, use real-time to notify both players that the game has started
+		console.log('Game created successfully:', data);
+
+		// Redirect both users to the game page (pass the gameId to the game page)
+		if (data) {
+			goto(`/game/${data.id}`);
+		}
+	}
 	import { onMount } from 'svelte';
 	import { Chess } from 'chess.js';
 	import { supabaseClient } from '$lib/supabase';
 	import type { Square, Move } from 'chess.js';
+	import { goto } from '$app/navigation';
 
 	let showPromotionModal = false;
 	let promotionFrom: string | null = null;
@@ -243,6 +307,23 @@
 	<!-- Title and Turn Display -->
 	<div class="mb-6 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
+		<!-- User List -->
+		<div class="mt-6 w-48 text-left">
+			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
+			<ul class="space-y-2">
+				{#each data.users as user}
+					<li>
+						<button
+							on:click={() => startGame(user.id)}
+							class="w-full rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+						>
+							{user.username}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</div>
+
 		<form method="POST" action="?/logout">
 			<button type="submit" class="mt-4 rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600">
 				Logout
