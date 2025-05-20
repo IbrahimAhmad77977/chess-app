@@ -1,39 +1,54 @@
 import { supabaseClient } from '$lib/supabase';
 import { Chess } from 'chess.js';
-import { error } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
+import { fail } from '@sveltejs/kit';
+import type { Actions } from './$types';
 
-// Helper function to validate UUID format
-const isValidUUID = (str: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+export const actions: Actions = {
+  makeMove: async ({ request }) => {
+    const formData = await request.formData();
+    const gameId = formData.get('gameId') as string;
+    const from = formData.get('from') as string;
+    const to = formData.get('to') as string;
+    const promotion = formData.get('promotion') as string | null;
 
-export const load: PageServerLoad = async ({ params }) => {
-  const { id } = params;
+    if (!gameId || !from || !to) {
+      return fail(400, { message: 'Missing required fields' });
+    }
 
-	if (!isValidUUID(id)) {
-		throw error(404, 'Invalid game ID');
-	}
+    const { data, error } = await supabaseClient
+      .from('games')
+      .select('fen, moves, white_player_id, black_player_id')
+      .eq('id', gameId)
+      .single();
 
-  // Query the game from the database
-  const { data, error: supabaseError } = await supabaseClient
-    .from('games')
-    .select('fen, white_player_id, black_player_id')
-    .eq('id', id)
-    .single();
+    if (error || !data) {
+      return fail(404, { message: 'Game not found' });
+    }
 
-  // If there is an error or no data, throw a 404 error
-  if (supabaseError || !data) {
-    throw error(404, 'Game not found');
-  }
+    const game = new Chess(data.fen);
+    const moveObj = { from, to, ...(promotion ? { promotion } : {}) };
 
-	const game = new Chess(data.fen);
-	const currentTurn = game.turn();
+    const move = game.move(moveObj);
+    if (!move) {
+      return fail(400, { message: 'Invalid move' });
+    }
 
-  return {
-    fen: game.fen(), // Return the updated FEN
-    gameId: id, // Game ID
-    currentTurn, // Current player's turn ('w' or 'b')
-    whitePlayerId: data.white_player_id, // White player ID
-    blackPlayerId: data.black_player_id, // Black player ID
-  };
+    // Update moves list
+    const updatedMoves = [...(data.moves ?? []), move.san];
+
+    const { error: updateError } = await supabaseClient
+      .from('games')
+      .update({
+        fen: game.fen(),
+        moves: updatedMoves,
+        current_turn: game.turn(),
+      })
+      .eq('id', gameId);
+
+    if (updateError) {
+      return fail(500, { message: 'Failed to update game' });
+    }
+
+    return { success: true };
+  },
 };

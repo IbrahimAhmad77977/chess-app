@@ -222,9 +222,35 @@
 			selectedSquare = null;
 		}
 	}
-
 	async function saveMove(fen: string, nextTurn: string) {
-		await supabaseClient.from('games').update({ fen }).eq('id', gameId);
+		const history = game.history(); // Array of SAN strings
+		const lastMove = history[history.length - 1]; // Most recent move
+
+		// Insert move into `moves` table
+		const { error: moveInsertError } = await supabaseClient.from('moves').insert([
+			{
+				moves: lastMove,
+				fen,
+				turn: nextTurn
+			}
+		]);
+
+		if (moveInsertError) {
+			console.error('Failed to insert move into moves table:', moveInsertError.message);
+		}
+
+		// Update latest FEN and turn in `games` table
+		const { error: gameUpdateError } = await supabaseClient
+			.from('games')
+			.update({
+				fen,
+				current_turn: nextTurn
+			})
+			.eq('id', gameId);
+
+		if (gameUpdateError) {
+			console.error('Failed to update game state:', gameUpdateError.message);
+		}
 	}
 
 	async function promotePawn(piece: string) {
