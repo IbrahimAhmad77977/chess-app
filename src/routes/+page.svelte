@@ -40,7 +40,7 @@
 		current_turn: string; // Either 'w' or 'b' for white or black's turn
 	}
 
-	const currentUserId = 'your_current_user_id'; // Replace with actual user ID (e.g., from Supabase session)
+	const currentUserId = data.user?.id;
 
 	async function startGame(opponentId: string) {
 		const { data, error } = await supabaseClient
@@ -224,32 +224,37 @@
 	}
 	async function saveMove(fen: string, nextTurn: string) {
 		const history = game.history(); // Array of SAN strings
-		const lastMove = history[history.length - 1]; // Most recent move
+		const lastMove = history[history.length - 1];
 
 		// Insert move into `moves` table
-		const { error: moveInsertError } = await supabaseClient.from('moves').insert([
+		const { error: moveInsertError } = await supabaseClient.from('games').insert([
 			{
 				moves: lastMove,
 				fen,
-				turn: nextTurn
+				current_turn: nextTurn
 			}
 		]);
 
 		if (moveInsertError) {
-			console.error('Failed to insert move into moves table:', moveInsertError.message);
+			console.error('Failed to insert move into games table:', moveInsertError.message);
 		}
 
-		// Update latest FEN and turn in `games` table
-		const { error: gameUpdateError } = await supabaseClient
+		// Insert a new snapshot into `games` table
+		const { error: gameInsertError, data } = await supabaseClient
 			.from('games')
-			.update({
-				fen,
-				current_turn: nextTurn
-			})
-			.eq('id', gameId);
+			.insert([
+				{
+					fen,
+					current_turn: nextTurn
+					// You can add timestamp, player info, etc.
+				}
+			])
+			.select(); // Optional: get the inserted game ID
 
-		if (gameUpdateError) {
-			console.error('Failed to update game state:', gameUpdateError.message);
+		if (gameInsertError) {
+			console.error('Failed to insert new game snapshot:', gameInsertError.message);
+		} else {
+			console.log('New game snapshot created:', data?.[0]);
 		}
 	}
 
@@ -337,7 +342,7 @@
 		<div class="mt-6 w-48 text-left">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
-				{#each data.users as user}
+				{#each data.users.filter((u) => u.id !== currentUserId) as user}
 					<li>
 						<button
 							on:click={() => startGame(user.id)}

@@ -1,21 +1,29 @@
-<script>
-	import { invalidate } from '$app/navigation';
+<script lang="ts">
 	import { onMount } from 'svelte';
+	import { invalidate } from '$app/navigation';
+	import type { SupabaseClient, Session } from '@supabase/supabase-js';
+	import type { AuthChangeEvent } from '@supabase/supabase-js';
 	import '../app.css';
 
-	let { data, children } = $props();
-	console.log('this is the data for the page: ', data);
+	export let data: {
+		supabase: SupabaseClient;
+		user: any;
+	};
 
-	let { supabase, user } = $derived(data);
+	let { supabase, user } = data;
 
 	onMount(() => {
-		const { data } = supabase.auth.onAuthStateChange((_, newSession) => {
-			// No session logic, just track auth state change if needed
-			invalidate('supabase:auth');
-		});
+		// Refresh SSR user data on auth state change
+		const { data: authListener } = supabase.auth.onAuthStateChange(
+			(event: AuthChangeEvent, session: Session | null) => {
+				invalidate('supabase:auth');
+			}
+		);
 
-		return () => data.subscription.unsubscribe();
+		return () => {
+			authListener?.subscription?.unsubscribe();
+		};
 	});
 </script>
 
-{@render children()}
+<slot />
