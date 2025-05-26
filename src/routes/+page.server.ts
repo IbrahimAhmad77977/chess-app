@@ -9,9 +9,12 @@ export const load: ServerLoad = async ({ locals }) => {
   if (!user) throw redirect(303, '/auth/login');
 
   // Fetch all users except the current user
-  const { data: users, error } = await supabase
-    .from('accounts')
-    .select('id, username') // Ensure you are selecting the correct columns
+	const { data: users, error } = await supabase
+		.from('accounts')
+		.select('id, username')
+		.neq('id', user.id); // 👈 Exclude the current user
+    console.log('this is userid: ', user.id);
+
 
   if (error) {
     console.error('Error fetching users:', error.message);

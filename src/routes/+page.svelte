@@ -40,33 +40,36 @@
 		current_turn: string; // Either 'w' or 'b' for white or black's turn
 	}
 
-	const currentUserId = data.user?.id;
+	const currentUserId = data.currentUserId;
 
 	async function startGame(opponentId: string) {
+		if (!currentUserId) {
+			console.error('Current user ID is not defined.');
+			return;
+		}
+
+		const startingFEN = new Chess().fen(); // Standard starting position
+
 		const { data, error } = await supabaseClient
-			.from('games') // Specify the table 'games' and the row type 'Game'
+			.from('games')
 			.insert([
 				{
-					player_white: currentUserId, // current user is White
-					player_black: opponentId, // opponent is Black
-					fen: 'start', // Initial FEN (standard chess start)
-					current_turn: 'w' // White always starts
+					white_player_id: currentUserId,
+					black_player_id: opponentId,
+					fen: startingFEN,
+					current_turn: 'w'
 				}
 			])
-			.select('id') // Ensure we get the 'id' field in the response
-			.single(); // Expect a single record to be returned
+			.select('id')
+			.single();
 
 		if (error) {
 			console.error('Error creating game:', error.message);
 			return;
 		}
 
-		// Optionally, use real-time to notify both players that the game has started
-		console.log('Game created successfully:', data);
-
-		// Redirect both users to the game page (pass the gameId to the game page)
 		if (data) {
-			goto(`/game/${data.id}`);
+			goto(`/game/${data.id}`); // redirect to game page
 		}
 	}
 	import { onMount } from 'svelte';
@@ -342,7 +345,7 @@
 		<div class="mt-6 w-48 text-left">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
-				{#each data.users.filter((u) => u.id !== currentUserId) as user}
+				{#each data.users as user}
 					<li>
 						<button
 							on:click={() => startGame(user.id)}

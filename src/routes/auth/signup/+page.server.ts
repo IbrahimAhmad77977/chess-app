@@ -28,6 +28,7 @@ export const actions: Actions = {
     const { error: insertError } = await supabase
       .from('accounts')
       .insert({
+            id: userId,            // <- Include this
         username: username,
         email: email,
       });
