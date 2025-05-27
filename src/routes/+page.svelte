@@ -48,7 +48,28 @@
 			return;
 		}
 
-		const startingFEN = new Chess().fen(); // Standard starting position
+		// Step 1: Check if a game already exists between these two players
+		const { data: existingGames, error: fetchError } = await supabaseClient
+			.from('games')
+			.select('id')
+			.or(
+				`and(white_player_id.eq.${currentUserId},black_player_id.eq.${opponentId}),and(white_player_id.eq.${opponentId},black_player_id.eq.${currentUserId})`
+			)
+			.limit(1);
+
+		if (fetchError) {
+			console.error('Error checking existing games:', fetchError.message);
+			return;
+		}
+
+		// Step 2: If a game exists, go to that game
+		if (existingGames && existingGames.length > 0) {
+			goto(`/${existingGames[0].id}`);
+			return;
+		}
+
+		// Step 3: No existing game — create a new one
+		const startingFEN = new Chess().fen();
 
 		const { data, error } = await supabaseClient
 			.from('games')
@@ -69,9 +90,10 @@
 		}
 
 		if (data) {
-			goto(`/${data.id}`); // redirect to game page
+			goto(`/${data.id}`);
 		}
 	}
+
 	import { onMount } from 'svelte';
 	import { Chess } from 'chess.js';
 	import { supabaseClient } from '$lib/supabase';

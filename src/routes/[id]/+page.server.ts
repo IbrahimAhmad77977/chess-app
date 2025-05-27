@@ -54,7 +54,7 @@ export const load: ServerLoad = async ({ locals, params  }) => {
 };
 
 export const actions: Actions = {
-  makeMove: async ({ request }) => {
+  makeMove: async ({ request, locals }) => {
     const formData = await request.formData();
     const gameId = formData.get('gameId') as string;
     const from = formData.get('from') as string;
@@ -65,39 +65,54 @@ export const actions: Actions = {
       return fail(400, { message: 'Missing required fields' });
     }
 
-    const { data, error } = await supabaseClient
+    // Get authenticated user
+    const authUser = locals.user;
+    if (!authUser) {
+      return fail(401, { message: 'You must be logged in to move.' });
+    }
+
+    // Fetch game info
+    const { data: game, error } = await supabaseClient
       .from('games')
-      .select('fen, moves, white_player_id, black_player_id')
+      .select('fen, moves, white_player_id, black_player_id, current_turn')
       .eq('id', gameId)
       .single();
 
-    if (error || !data) {
+    if (error || !game) {
       return fail(404, { message: 'Game not found' });
     }
 
-    const game = new Chess(data.fen);
-    const moveObj = { from, to, ...(promotion ? { promotion } : {}) };
+    // Enforce turn-based play based on IDs
+    const expectedPlayerId =
+      game.current_turn === 'w' ? game.white_player_id : game.black_player_id;
 
-    const move = game.move(moveObj);
-    if (!move) {
-      return fail(400, { message: 'Invalid move' });
+    if (authUser.id !== expectedPlayerId) {
+      return fail(403, { message: "It's not your turn." });
     }
 
-    // Update moves list
-    const updatedMoves = [...(data.moves ?? []), move.san];
+    const chess = new Chess(game.fen);
+    const moveObj = { from, to, ...(promotion ? { promotion } : {}) };
+    const move = chess.move(moveObj);
+
+    if (!move) {
+      return fail(400, { message: 'Invalid move.' });
+    }
+
+    const updatedMoves = [...(game.moves ?? []), move.san];
+
     const { error: updateError } = await supabaseClient
       .from('games')
       .update({
-        fen: game.fen(),
+        fen: chess.fen(),
         moves: updatedMoves,
-        current_turn: game.turn(),
+        current_turn: chess.turn()
       })
       .eq('id', gameId);
 
     if (updateError) {
-      return fail(500, { message: 'Failed to update game' });
+      return fail(500, { message: 'Failed to update game.' });
     }
 
     return { success: true };
-  },
+  }
 };

@@ -29,7 +29,40 @@
 		turn = game.turn();
 		moveHistory = game.history({ verbose: true });
 	});
+	onMount(() => {
+		const channel = supabaseClient
+			.channel('games')
+			.on(
+				'postgres_changes',
+				{
+					event: 'UPDATE',
+					schema: 'public',
+					table: 'games',
+					filter: `id=eq.${gameId}`
+				},
+				(payload) => {
+					const newFen = payload.new.fen;
+					const newTurn = payload.new.current_turn;
 
+					console.log('♻️ Real-time update received:', newFen);
+
+					if (game.fen() !== newFen) {
+						game.load(newFen);
+						turn = newTurn;
+						moveHistory = game.history({ verbose: true });
+						updateBoard();
+					}
+				}
+			)
+			.subscribe((status) => {
+				console.log('📡 Subscribed to game:', status);
+			});
+
+		// Clean up on unmount
+		return () => {
+			supabaseClient.removeChannel(channel);
+		};
+	});
 	export let data;
 	// export let users: Array<{ id: string; username: string }>;
 	interface Game {
@@ -102,6 +135,8 @@
 	});
 	const gameId = data.gameId;
 	export let fen: string;
+	const whitePlayerId = data.game?.white_player_id;
+	const blackPlayerId = data.game?.black_player_id;
 
 	function playMoveSound() {
 		if (sounds.move) sounds.move.play();
@@ -186,10 +221,19 @@
 	}
 
 	async function makeMove(from: string, to: string) {
+		const isWhiteTurn = game.turn() === 'w';
+		const expectedPlayerId = isWhiteTurn ? whitePlayerId : blackPlayerId;
+
+		if (currentUserId !== expectedPlayerId) {
+			statusMessage = "It's not your turn.";
+			return;
+		}
+
 		const move = game.move({ from, to, promotion: 'q' }); // Try default first
+
 		if (move) {
+			// Handle promotion separately
 			if (move.flags.includes('p') && (to[1] === '8' || to[1] === '1')) {
-				// Undo last move and open modal
 				game.undo();
 				promotionFrom = from;
 				promotionTo = to;
@@ -200,9 +244,8 @@
 			const fen = game.fen();
 			turn = game.turn();
 			await saveMove(fen, turn);
-			moveHistory = game.history({ verbose: true }); // Update move history after a move
+			moveHistory = game.history({ verbose: true });
 			updateBoard();
-
 			if (game.isGameOver()) {
 				if (game.isCheckmate()) {
 					playGameOverSound();
@@ -249,6 +292,12 @@
 	}
 
 	async function promotePawn(piece: string) {
+		const expectedPlayerId = game.turn() === 'w' ? whitePlayerId : blackPlayerId;
+		if (currentUserId !== expectedPlayerId) {
+			alert("It's not your turn.");
+			return;
+		}
+
 		if (promotionFrom && promotionTo) {
 			const move = game.move({ from: promotionFrom, to: promotionTo, promotion: piece });
 
@@ -306,14 +355,28 @@
 			return;
 		}
 
+		// 🚫 Can't click empty square
 		if (!piece) return;
 
+		// 🔒 Enforce turn-based player permissions
 		const isWhiteTurn = game.turn() === 'w';
-		const isWhitePieceTurn = isWhiteTurn && isWhitePiece(piece);
-		const isBlackPieceTurn = !isWhiteTurn && !isWhitePiece(piece);
+		const isCurrentUserWhite = currentUserId === whitePlayerId;
+		const isCurrentUserBlack = currentUserId === blackPlayerId;
 
-		if (!isWhitePieceTurn && !isBlackPieceTurn) return;
+		// Check if it's user's turn
+		if ((isWhiteTurn && !isCurrentUserWhite) || (!isWhiteTurn && !isCurrentUserBlack)) {
+			statusMessage = "It's not your turn.";
+			return;
+		}
 
+		// 🔍 Only allow selecting user's own pieces
+		const pieceIsWhite = isWhitePiece(piece); // ✅ renamed variable
+		if ((isCurrentUserWhite && !pieceIsWhite) || (isCurrentUserBlack && pieceIsWhite)) {
+			statusMessage = "Can't move foe's piece.";
+			return;
+		}
+
+		// ✅ Select square and show legal moves
 		selectedSquare = square;
 		legalMoves = getLegalMoves(square);
 		playSelectSound();
