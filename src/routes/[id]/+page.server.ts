@@ -1,7 +1,43 @@
 import { supabaseClient } from '$lib/supabase';
 import { Chess } from 'chess.js';
-import { fail } from '@sveltejs/kit';
+import { fail, redirect, type ServerLoad } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+export const load: ServerLoad = async ({ locals }) => {
+  const supabase = locals.supabase as SupabaseClient;
+  const authUser = locals.user; // This is Supabase Auth user
+
+  // Ensure user is authenticated
+  if (!authUser) throw redirect(303, '/auth/login');
+
+  // Fetch full user info (e.g., username) from accounts table
+  const { data: currentUser, error: userError } = await supabase
+    .from('accounts')
+    .select('id, username')
+    .eq('id', authUser.id)
+    .single();
+
+  if (userError || !currentUser) {
+    throw redirect(303, '/auth/login'); // user record missing or error
+  }
+
+  // Fetch all other users
+  const { data: users, error } = await supabase
+    .from('accounts')
+    .select('id, username')
+    .neq('id', currentUser.id); // 👈 Exclude the current user
+
+  if (error) {
+    console.error('Error fetching users:', error.message);
+    return { users: [], currentUserId: currentUser.id };
+  }
+
+  return {
+    users,
+    currentUserId: currentUser.id
+  };
+};
 
 export const actions: Actions = {
   makeMove: async ({ request }) => {

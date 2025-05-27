@@ -335,6 +335,29 @@
 	function isWhitePiece(piece: string): boolean {
 		return ['♖', '♘', '♗', '♕', '♔', '♙'].includes(piece);
 	}
+	const channel = supabaseClient
+		.channel('game-updates')
+		.on(
+			'postgres_changes',
+			{
+				event: 'UPDATE',
+				schema: 'public',
+				table: 'games',
+				filter: `id=eq.${gameId}`
+			},
+			(payload) => {
+				const updatedFen = payload.new.fen;
+				const updatedTurn = payload.new.turn;
+
+				// Update local state
+				game.load(updatedFen);
+				updateBoard(); // Refresh the board view
+				turn = game.turn();
+				moveHistory = game.history({ verbose: true }); // Update move history
+				turn = updatedTurn;
+			}
+		)
+		.subscribe();
 </script>
 
 <div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">
