@@ -241,24 +241,6 @@
 		if (moveInsertError) {
 			console.error('Failed to insert move into games table:', moveInsertError.message);
 		}
-
-		// Insert a new snapshot into `games` table
-		const { error: gameInsertError, data } = await supabaseClient
-			.from('games')
-			.insert([
-				{
-					fen,
-					current_turn: nextTurn
-					// You can add timestamp, player info, etc.
-				}
-			])
-			.select(); // Optional: get the inserted game ID
-
-		if (gameInsertError) {
-			console.error('Failed to insert new game snapshot:', gameInsertError.message);
-		} else {
-			console.log('New game snapshot created:', data?.[0]);
-		}
 	}
 
 	async function promotePawn(piece: string) {

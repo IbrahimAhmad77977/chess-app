@@ -100,6 +100,8 @@
 			audio.preload = 'auto';
 		});
 	});
+	const gameId = data.gameId;
+	export let fen: string;
 
 	function playMoveSound() {
 		if (sounds.move) sounds.move.play();
@@ -117,8 +119,6 @@
 		if (sounds.game_over) sounds.game_over.play();
 	}
 
-	export let fen: string;
-	export let gameId: string;
 	let turn = '';
 	let statusMessage: string | null = null;
 
@@ -229,35 +229,22 @@
 		const history = game.history(); // Array of SAN strings
 		const lastMove = history[history.length - 1];
 
-		// Insert move into `moves` table
-		const { error: moveInsertError } = await supabaseClient.from('games').insert([
-			{
-				moves: lastMove,
-				fen,
-				current_turn: nextTurn
-			}
-		]);
-
-		if (moveInsertError) {
-			console.error('Failed to insert move into games table:', moveInsertError.message);
+		if (!gameId) {
+			console.error('No gameId provided, cannot update game.');
+			return;
 		}
 
-		// Insert a new snapshot into `games` table
-		const { error: gameInsertError, data } = await supabaseClient
+		const { error } = await supabaseClient
 			.from('games')
-			.insert([
-				{
-					fen,
-					current_turn: nextTurn
-					// You can add timestamp, player info, etc.
-				}
-			])
-			.select(); // Optional: get the inserted game ID
+			.update({
+				fen,
+				current_turn: nextTurn,
+				moves: lastMove // optional, if you store moves in `games` table
+			})
+			.eq('id', gameId);
 
-		if (gameInsertError) {
-			console.error('Failed to insert new game snapshot:', gameInsertError.message);
-		} else {
-			console.log('New game snapshot created:', data?.[0]);
+		if (error) {
+			console.error('❌ Failed to update game with move:', error.message);
 		}
 	}
 
@@ -336,7 +323,7 @@
 		return ['♖', '♘', '♗', '♕', '♔', '♙'].includes(piece);
 	}
 	const channel = supabaseClient
-		.channel('game-updates')
+		.channel('games')
 		.on(
 			'postgres_changes',
 			{
@@ -368,16 +355,22 @@
 		<div class="mt-6 w-48 text-left">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
-				{#each data.users as user}
-					<li>
-						<button
-							on:click={() => startGame(user.id)}
-							class="w-full rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-						>
-							{user.username}
-						</button>
-					</li>
-				{/each}
+				{#if data?.users && Array.isArray(data.users)}
+					<ul class="space-y-2">
+						{#each data.users as user (user.id)}
+							<li>
+								<button
+									on:click={() => startGame(user.id)}
+									class="w-full rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+								>
+									{user.username}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="text-sm text-gray-500">No users available to play.</p>
+				{/if}
 			</ul>
 		</div>
 

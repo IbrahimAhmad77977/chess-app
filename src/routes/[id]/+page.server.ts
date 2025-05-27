@@ -4,7 +4,7 @@ import { fail, redirect, type ServerLoad } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const load: ServerLoad = async ({ locals }) => {
+export const load: ServerLoad = async ({ locals, params  }) => {
   const supabase = locals.supabase as SupabaseClient;
   const authUser = locals.user; // This is Supabase Auth user
 
@@ -32,10 +32,24 @@ export const load: ServerLoad = async ({ locals }) => {
     console.error('Error fetching users:', error.message);
     return { users: [], currentUserId: currentUser.id };
   }
+    const gameId = params.id; // 👈 FIXED: get gameId from route params
+
+  const { data: game, error: gameError } = await supabase
+    .from('games')
+    .select('id, fen, moves, white_player_id, black_player_id, current_turn')
+    .eq('id', gameId)
+    .single();
+
+  if (gameError || !game) {
+    return fail(404, { message: 'Game not found' });
+  }
+
 
   return {
     users,
-    currentUserId: currentUser.id
+    currentUserId: currentUser.id,
+     gameId,           // ✅ pass gameId to client
+  game       
   };
 };
 
@@ -71,7 +85,6 @@ export const actions: Actions = {
 
     // Update moves list
     const updatedMoves = [...(data.moves ?? []), move.san];
-
     const { error: updateError } = await supabaseClient
       .from('games')
       .update({
