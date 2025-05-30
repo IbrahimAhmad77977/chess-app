@@ -1,8 +1,12 @@
 <script lang="ts">
+	let loading = false;
+
 	async function logout() {
 		await supabaseClient.auth.signOut();
 		goto('/auth'); // Redirect to login page (adjust the path if needed)
 	}
+	let selectedOpponent: { id: string; username: string } | null = null;
+
 	onMount(async () => {
 		if (gameId) {
 			const { data: gameData, error } = await supabaseClient
@@ -42,7 +46,12 @@
 
 	const currentUserId = data.currentUserId;
 
-	async function startGame(opponentId: string) {
+	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
+		// const selectedUser = data.users.find((user) => user.id === opponentId);
+		// selectedOpponent = selectedUser ?? null;
+
+		selectedOpponent = opponent;
+
 		if (!currentUserId) {
 			console.error('Current user ID is not defined.');
 			return;
@@ -99,6 +108,7 @@
 	import { supabaseClient } from '$lib/supabase';
 	import type { Square, Move } from 'chess.js';
 	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 
 	let showPromotionModal = false;
 	let promotionFrom: string | null = null;
@@ -345,6 +355,7 @@
 	<!-- Title and Turn Display -->
 	<div class="mb-6 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
+		<p>Currently playing with: {selectedOpponent ? selectedOpponent.username : 'Self'}</p>
 		<!-- User List -->
 		<div class="mt-6 w-48 text-left">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
@@ -352,8 +363,8 @@
 				{#each data.users as user}
 					<li>
 						<button
-							on:click={() => startGame(user.id)}
-							class="w-full rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+							on:click={() => startGame(user.id, user)}
+							class="w-full cursor-pointer rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
 						>
 							{user.username}
 						</button>
@@ -362,9 +373,27 @@
 			</ul>
 		</div>
 
-		<form method="POST" action="?/logout">
-			<button type="submit" class="mt-4 rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600">
-				Logout
+		<form
+			method="POST"
+			action="?/logout"
+			use:enhance={() => {
+				loading = true;
+
+				return async ({ update }) => {
+					await update();
+					loading = false;
+				};
+			}}
+		>
+			<button
+				type="submit"
+				class="mt-4 cursor-pointer rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600"
+			>
+				{#if loading}
+					Logging out...
+				{:else}
+					Logout
+				{/if}
 			</button>
 		</form>
 
@@ -401,12 +430,7 @@
 							handleClick(rowIndex, colIndex);
 						}
 					}}
-					class="relative aspect-square text-2xl select-none md:text-3xl lg:text-4xl"
-					class:outline={legalMoves.includes(square)}
-					class:outline-4={legalMoves.includes(square)}
-					class:outline-green-500={legalMoves.includes(square)}
-					class:ring-4={selectedSquare === square}
-					class:ring-yellow-400={selectedSquare === square}
+					class={`relative aspect-square text-2xl select-none md:text-3xl lg:text-4xl ${legalMoves.includes(square) ? ' border-2 border-green-500' : ''} ${selectedSquare === square ? 'border-2 border-yellow-400' : ''}`}
 					class:bg-[#f0d9b5]={(rowIndex + colIndex) % 2 === 0}
 					class:bg-[#b58863]={(rowIndex + colIndex) % 2 !== 0}
 				>
