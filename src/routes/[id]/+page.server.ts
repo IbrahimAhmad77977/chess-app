@@ -1,6 +1,7 @@
 import { supabaseClient } from '$lib/supabase';
 import { Chess } from 'chess.js';
 import { fail, redirect, type ServerLoad } from '@sveltejs/kit';
+
 import type { Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -114,5 +115,17 @@ export const actions: Actions = {
     }
 
     return { success: true };
-  }
+  },
+
+      logout: async ({ locals, cookies }) => {
+      const supabase = locals.supabase as SupabaseClient;
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error:', error.message);
+        throw redirect(303, '/auth/error');
+      }
+  
+      cookies.delete('session', { path: '/' });
+      throw redirect(303, '/auth/login');
+    }
 };

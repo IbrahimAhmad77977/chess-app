@@ -1,8 +1,6 @@
 <script lang="ts">
-	async function logout() {
-		await supabaseClient.auth.signOut();
-		goto('/auth'); // Redirect to login page (adjust the path if needed)
-	}
+	let loading = false;
+
 	onMount(async () => {
 		if (gameId) {
 			const { data: gameData, error } = await supabaseClient
@@ -64,7 +62,6 @@
 		};
 	});
 	export let data;
-	// export let users: Array<{ id: string; username: string }>;
 	interface Game {
 		id: string; // Assuming the 'id' is a string (UUID or INT8)
 		player_white: string; // User ID of the player playing white
@@ -75,7 +72,8 @@
 
 	const currentUserId = data.currentUserId;
 
-	async function startGame(opponentId: string) {
+	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
+		selectedOpponent = opponent;
 		if (!currentUserId) {
 			console.error('Current user ID is not defined.');
 			return;
@@ -110,6 +108,7 @@
 	import { supabaseClient } from '$lib/supabase';
 	import type { Square, Move } from 'chess.js';
 	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 
 	let showPromotionModal = false;
 	let promotionFrom: string | null = null;
@@ -125,7 +124,8 @@
 			move: new Audio('/sound/Move.mp3'),
 			capture: new Audio('/sound/Capture.mp3'),
 			select: new Audio('/sound/Select.mp3'),
-			game_over: new Audio('/sound/Game_Over.mp3')
+			game_over: new Audio('/sound/Game_Over.mp3'),
+			error: new Audio('/sound/Error.mp3') // <-- add this line
 		};
 
 		// Ensure all sounds are loaded before playing
@@ -154,8 +154,13 @@
 		if (sounds.game_over) sounds.game_over.play();
 	}
 
+	function playErrorSound() {
+		if (sounds.error) sounds.error.play();
+	}
+
 	let turn = '';
 	let statusMessage: string | null = null;
+	let selectedOpponent: { id: string; username: string } | null = null;
 
 	let game: Chess;
 	let board: (string | null)[][] = [];
@@ -226,6 +231,7 @@
 
 		if (currentUserId !== expectedPlayerId) {
 			statusMessage = "It's not your turn.";
+			playErrorSound();
 			return;
 		}
 
@@ -294,7 +300,8 @@
 	async function promotePawn(piece: string) {
 		const expectedPlayerId = game.turn() === 'w' ? whitePlayerId : blackPlayerId;
 		if (currentUserId !== expectedPlayerId) {
-			alert("It's not your turn.");
+			statusMessage = "It's not your turn.";
+			playErrorSound();
 			return;
 		}
 
@@ -366,6 +373,7 @@
 		// Check if it's user's turn
 		if ((isWhiteTurn && !isCurrentUserWhite) || (!isWhiteTurn && !isCurrentUserBlack)) {
 			statusMessage = "It's not your turn.";
+			playErrorSound();
 			return;
 		}
 
@@ -373,6 +381,7 @@
 		const pieceIsWhite = isWhitePiece(piece); // ✅ renamed variable
 		if ((isCurrentUserWhite && !pieceIsWhite) || (isCurrentUserBlack && pieceIsWhite)) {
 			statusMessage = "Can't move foe's piece.";
+			playErrorSound();
 			return;
 		}
 
@@ -385,6 +394,7 @@
 	function isWhitePiece(piece: string): boolean {
 		return ['♖', '♘', '♗', '♕', '♔', '♙'].includes(piece);
 	}
+
 	const channel = supabaseClient
 		.channel('games')
 		.on(
@@ -412,19 +422,30 @@
 
 <div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">
 	<!-- Title and Turn Display -->
-	<div class="mb-6 text-center">
+	<div class="mb-6 w-[250px] shrink-0 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
+		<p>
+			Currently playing with: {selectedOpponent ? selectedOpponent.username : 'Self'}
+		</p>
 		<!-- User List -->
-		<div class="mt-6 w-48 text-left">
+		<div class="mt-6 w-[250px] text-center">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
 				{#if data?.users && Array.isArray(data.users)}
 					<ul class="space-y-2">
 						{#each data.users as user (user.id)}
+							{@const isCurrentOpponent = user.id === whitePlayerId || user.id === blackPlayerId}
 							<li>
 								<button
-									on:click={() => startGame(user.id)}
-									class="w-full rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+									disabled={isCurrentOpponent}
+									on:click={() => !isCurrentOpponent && startGame(user.id, user)}
+									class={`w-full rounded px-3 py-1 text-sm text-white transition
+        ${
+					isCurrentOpponent
+						? 'cursor-not-allowed bg-gray-400'
+						: 'cursor-pointer bg-blue-500 hover:bg-blue-600'
+				}
+      `}
 								>
 									{user.username}
 								</button>
@@ -437,9 +458,27 @@
 			</ul>
 		</div>
 
-		<form method="POST" action="?/logout">
-			<button type="submit" class="mt-4 rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600">
-				Logout
+		<form
+			method="POST"
+			action="?/logout"
+			use:enhance={() => {
+				loading = true;
+
+				return async ({ update }) => {
+					await update();
+					loading = false;
+				};
+			}}
+		>
+			<button
+				type="submit"
+				class="mt-4 cursor-pointer rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600"
+			>
+				{#if loading}
+					Logging out...
+				{:else}
+					Logout
+				{/if}
 			</button>
 		</form>
 
@@ -476,18 +515,13 @@
 							handleClick(rowIndex, colIndex);
 						}
 					}}
-					class="relative aspect-square text-2xl select-none md:text-3xl lg:text-4xl"
-					class:outline={legalMoves.includes(square)}
-					class:outline-4={legalMoves.includes(square)}
-					class:outline-green-500={legalMoves.includes(square)}
-					class:ring-4={selectedSquare === square}
-					class:ring-yellow-400={selectedSquare === square}
+					class={`relative aspect-square text-2xl select-none md:text-3xl lg:text-4xl ${legalMoves.includes(square) ? ' border-2 border-green-500' : ''} ${selectedSquare === square ? 'border-2 border-yellow-400' : ''}`}
 					class:bg-[#f0d9b5]={(rowIndex + colIndex) % 2 === 0}
 					class:bg-[#b58863]={(rowIndex + colIndex) % 2 !== 0}
 				>
 					{#if piece}
 						<span
-							class="absolute inset-0 flex items-center justify-center"
+							class="absolute inset-0 flex cursor-pointer items-center justify-center"
 							class:text-white={isWhitePiece(piece)}
 							class:text-black={!isWhitePiece(piece)}
 							style="font-family: 'DejaVu Sans', 'Arial Unicode MS', 'Noto Sans Symbols', sans-serif;"

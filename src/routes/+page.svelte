@@ -1,10 +1,6 @@
 <script lang="ts">
 	let loading = false;
 
-	async function logout() {
-		await supabaseClient.auth.signOut();
-		goto('/auth'); // Redirect to login page (adjust the path if needed)
-	}
 	let selectedOpponent: { id: string; username: string } | null = null;
 
 	onMount(async () => {
@@ -47,9 +43,6 @@
 	const currentUserId = data.currentUserId;
 
 	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
-		// const selectedUser = data.users.find((user) => user.id === opponentId);
-		// selectedOpponent = selectedUser ?? null;
-
 		selectedOpponent = opponent;
 
 		if (!currentUserId) {
@@ -124,7 +117,8 @@
 			move: new Audio('/sound/Move.mp3'),
 			capture: new Audio('/sound/Capture.mp3'),
 			select: new Audio('/sound/Select.mp3'),
-			game_over: new Audio('/sound/Game_Over.mp3')
+			game_over: new Audio('/sound/Game_Over.mp3'),
+			error: new Audio('/sound/Error.mp3') // <-- add this line
 		};
 
 		// Ensure all sounds are loaded before playing
@@ -147,6 +141,10 @@
 
 	function playGameOverSound() {
 		if (sounds.game_over) sounds.game_over.play();
+	}
+
+	function playErrorSound() {
+		if (sounds.error) sounds.error.play();
 	}
 
 	export let fen: string;
@@ -339,7 +337,11 @@
 		const isWhitePieceTurn = isWhiteTurn && isWhitePiece(piece);
 		const isBlackPieceTurn = !isWhiteTurn && !isWhitePiece(piece);
 
-		if (!isWhitePieceTurn && !isBlackPieceTurn) return;
+		if (!isWhitePieceTurn && !isBlackPieceTurn) {
+			playErrorSound(); // 🔊 Add this line for sound feedback
+			statusMessage = 'Not your turn!';
+			return;
+		}
 
 		selectedSquare = square;
 		legalMoves = getLegalMoves(square);
@@ -353,11 +355,13 @@
 
 <div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">
 	<!-- Title and Turn Display -->
-	<div class="mb-6 text-center">
+	<div class="mb-6 w-[250px] shrink-0 text-center">
 		<p class="mb-2 text-3xl font-bold">Chess App</p>
-		<p>Currently playing with: {selectedOpponent ? selectedOpponent.username : 'Self'}</p>
+		<p>
+			Currently playing with: {selectedOpponent ? selectedOpponent.username : 'Self'}
+		</p>
 		<!-- User List -->
-		<div class="mt-6 w-48 text-left">
+		<div class="mt-6 w-[250px] text-center">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
 				{#each data.users as user}
@@ -436,7 +440,7 @@
 				>
 					{#if piece}
 						<span
-							class="absolute inset-0 flex items-center justify-center"
+							class="absolute inset-0 flex cursor-pointer items-center justify-center"
 							class:text-white={isWhitePiece(piece)}
 							class:text-black={!isWhitePiece(piece)}
 							style="font-family: 'DejaVu Sans', 'Arial Unicode MS', 'Noto Sans Symbols', sans-serif;"
