@@ -100,6 +100,8 @@
 		}
 
 		if (data) {
+			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
+
 			goto(`/${data.id}`); // redirect to game page
 		}
 	}
@@ -170,12 +172,21 @@
 	const files = 'abcdefgh';
 
 	onMount(() => {
-		game = new Chess(fen);
-		updateBoard();
-		turn = game.turn();
-		moveHistory = game.history({ verbose: true }); // Initialize move history on page load
+		game = new Chess();
+		if (gameId) {
+			loadGameData(gameId);
+		} else {
+			game.load(fen);
+			updateBoard();
+			turn = game.turn();
+			moveHistory = game.history({ verbose: true });
+		}
 	});
-
+	$: if (gameId) {
+		if (channel) {
+			supabaseClient.removeChannel(channel);
+		}
+	}
 	function getLegalMoves(square: string): string[] {
 		try {
 			const moves = game.moves({ square: square as Square, verbose: true }) as Move[];
@@ -418,6 +429,54 @@
 			}
 		)
 		.subscribe();
+	import { page } from '$app/stores';
+	import { get } from 'svelte/store';
+
+	let currentGameId = gameId; // track current gameId internally
+
+	$: if (gameId && currentGameId !== gameId) {
+		currentGameId = gameId;
+		loadGameData(currentGameId);
+	}
+
+	async function loadGameData(id: string) {
+		loading = true;
+		const { data: gameData, error } = await supabaseClient
+			.from('games')
+			.select('fen, current_turn, white_player_id, black_player_id, moves')
+			.eq('id', id)
+			.single();
+
+		if (error) {
+			console.error('Failed to load game:', error.message);
+			loading = false;
+			return;
+		}
+
+		if (gameData?.fen) {
+			game.load(gameData.fen);
+		} else {
+			game.reset();
+		}
+
+		turn = gameData.current_turn;
+		moveHistory = game.history({ verbose: true });
+
+		updateBoard();
+		loading = false;
+	}
+	onMount(() => {
+		const stored = localStorage.getItem('selectedOpponent');
+		if (stored) {
+			try {
+				selectedOpponent = JSON.parse(stored);
+			} catch (e) {
+				console.error('Failed to parse selectedOpponent:', e);
+			}
+			// Clear it to prevent reuse in later games
+			localStorage.removeItem('selectedOpponent');
+		}
+	});
 </script>
 
 <div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">

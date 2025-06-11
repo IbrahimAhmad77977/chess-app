@@ -6,6 +6,7 @@ import type { Actions } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const load: ServerLoad = async ({ locals, params  }) => {
+  
   const supabase = locals.supabase as SupabaseClient;
   const authUser = locals.user; // This is Supabase Auth user
 

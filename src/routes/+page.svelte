@@ -92,6 +92,8 @@
 		}
 
 		if (data) {
+			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
+
 			goto(`/${data.id}`);
 		}
 	}
