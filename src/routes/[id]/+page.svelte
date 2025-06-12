@@ -74,14 +74,40 @@
 
 	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
 		selectedOpponent = opponent;
+
 		if (!currentUserId) {
 			console.error('Current user ID is not defined.');
 			return;
 		}
 
+		// Step 1: Check for existing game between currentUser and opponent
+		const { data: existingGames, error: fetchError } = await supabaseClient
+			.from('games')
+			.select('id')
+			.or(
+				`and(white_player_id.eq.${currentUserId},black_player_id.eq.${opponentId}),and(white_player_id.eq.${opponentId},black_player_id.eq.${currentUserId})`
+			)
+			.order('id', { ascending: false }) // optional: get latest game if multiple
+			.limit(1)
+			.single();
+
+		if (fetchError && fetchError.code !== 'PGRST116') {
+			// PGRST116 = no rows found
+			console.error('Error checking existing game:', fetchError.message);
+			return;
+		}
+
+		if (existingGames) {
+			// Game already exists, redirect to it
+			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
+			goto(`/${existingGames.id}`);
+			return;
+		}
+
+		// Step 2: No existing game found, create new one
 		const startingFEN = new Chess().fen(); // Standard starting position
 
-		const { data, error } = await supabaseClient
+		const { data: newGame, error: insertError } = await supabaseClient
 			.from('games')
 			.insert([
 				{
@@ -94,15 +120,14 @@
 			.select('id')
 			.single();
 
-		if (error) {
-			console.error('Error creating game:', error.message);
+		if (insertError) {
+			console.error('Error creating game:', insertError.message);
 			return;
 		}
 
-		if (data) {
+		if (newGame) {
 			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
-
-			goto(`/${data.id}`); // redirect to game page
+			goto(`/${newGame.id}`); // redirect to new game page
 		}
 	}
 	import { onMount } from 'svelte';
