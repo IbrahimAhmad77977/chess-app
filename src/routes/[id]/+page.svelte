@@ -1,5 +1,6 @@
 <script lang="ts">
 	let loading = false;
+	import { invalidate } from '$app/navigation';
 
 	onMount(async () => {
 		if (gameId) {
@@ -62,6 +63,8 @@
 		};
 	});
 	export let data;
+
+	console.log('this is data: ', data);
 	interface Game {
 		id: string; // Assuming the 'id' is a string (UUID or INT8)
 		player_white: string; // User ID of the player playing white
@@ -73,6 +76,7 @@
 	const currentUserId = data.currentUserId;
 
 	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
+		// debugger;
 		selectedOpponent = opponent;
 
 		if (!currentUserId) {
@@ -100,7 +104,7 @@
 		if (existingGames) {
 			// Game already exists, redirect to it
 			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
-			goto(`/${existingGames.id}`);
+			window.location.href = `/${existingGames.id}`;
 			return;
 		}
 
