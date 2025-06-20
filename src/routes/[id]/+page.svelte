@@ -1,7 +1,6 @@
 <script lang="ts">
 	let loading = false;
-
-	let selectedOpponent: { id: string; username: string } | null = null;
+	import { invalidate } from '$app/navigation';
 
 	onMount(async () => {
 		if (gameId) {
@@ -29,9 +28,43 @@
 		turn = game.turn();
 		moveHistory = game.history({ verbose: true });
 	});
+	onMount(() => {
+		const channel = supabaseClient
+			.channel('games')
+			.on(
+				'postgres_changes',
+				{
+					event: 'UPDATE',
+					schema: 'public',
+					table: 'games',
+					filter: `id=eq.${gameId}`
+				},
+				(payload) => {
+					const newFen = payload.new.fen;
+					const newTurn = payload.new.current_turn;
 
+					console.log('♻️ Real-time update received:', newFen);
+
+					if (game.fen() !== newFen) {
+						game.load(newFen);
+						turn = newTurn;
+						moveHistory = game.history({ verbose: true });
+						updateBoard();
+					}
+				}
+			)
+			.subscribe((status) => {
+				console.log('📡 Subscribed to game:', status);
+			});
+
+		// Clean up on unmount
+		return () => {
+			supabaseClient.removeChannel(channel);
+		};
+	});
 	export let data;
-	// export let users: Array<{ id: string; username: string }>;
+
+	console.log('this is data: ', data);
 	interface Game {
 		id: string; // Assuming the 'id' is a string (UUID or INT8)
 		player_white: string; // User ID of the player playing white
@@ -43,6 +76,7 @@
 	const currentUserId = data.currentUserId;
 
 	async function startGame(opponentId: string, opponent: { id: string; username: string }) {
+		// debugger;
 		selectedOpponent = opponent;
 
 		if (!currentUserId) {
@@ -50,30 +84,34 @@
 			return;
 		}
 
-		// Step 1: Check if a game already exists between these two players
+		// Step 1: Check for existing game between currentUser and opponent
 		const { data: existingGames, error: fetchError } = await supabaseClient
 			.from('games')
 			.select('id')
 			.or(
 				`and(white_player_id.eq.${currentUserId},black_player_id.eq.${opponentId}),and(white_player_id.eq.${opponentId},black_player_id.eq.${currentUserId})`
 			)
-			.limit(1);
+			.order('id', { ascending: false }) // optional: get latest game if multiple
+			.limit(1)
+			.single();
 
-		if (fetchError) {
-			console.error('Error checking existing games:', fetchError.message);
+		if (fetchError && fetchError.code !== 'PGRST116') {
+			// PGRST116 = no rows found
+			console.error('Error checking existing game:', fetchError.message);
 			return;
 		}
 
-		// Step 2: If a game exists, go to that game
-		if (existingGames && existingGames.length > 0) {
-			goto(`/${existingGames[0].id}`);
+		if (existingGames) {
+			// Game already exists, redirect to it
+			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
+			window.location.href = `/${existingGames.id}`;
 			return;
 		}
 
-		// Step 3: No existing game — create a new one
-		const startingFEN = new Chess().fen();
+		// Step 2: No existing game found, create new one
+		const startingFEN = new Chess().fen(); // Standard starting position
 
-		const { data, error } = await supabaseClient
+		const { data: newGame, error: insertError } = await supabaseClient
 			.from('games')
 			.insert([
 				{
@@ -86,18 +124,16 @@
 			.select('id')
 			.single();
 
-		if (error) {
-			console.error('Error creating game:', error.message);
+		if (insertError) {
+			console.error('Error creating game:', insertError.message);
 			return;
 		}
 
-		if (data) {
+		if (newGame) {
 			localStorage.setItem('selectedOpponent', JSON.stringify(opponent));
-
-			goto(`/${data.id}`);
+			goto(`/${newGame.id}`); // redirect to new game page
 		}
 	}
-
 	import { onMount } from 'svelte';
 	import { Chess } from 'chess.js';
 	import { supabaseClient } from '$lib/supabase';
@@ -128,6 +164,10 @@
 			audio.preload = 'auto';
 		});
 	});
+	const gameId = data.gameId;
+	export let fen: string;
+	const whitePlayerId = data.game?.white_player_id;
+	const blackPlayerId = data.game?.black_player_id;
 
 	function playMoveSound() {
 		if (sounds.move) sounds.move.play();
@@ -149,10 +189,9 @@
 		if (sounds.error) sounds.error.play();
 	}
 
-	export let fen: string;
-	export let gameId: string;
 	let turn = '';
 	let statusMessage: string | null = null;
+	let selectedOpponent: { id: string; username: string } | null = null;
 
 	let game: Chess;
 	let board: (string | null)[][] = [];
@@ -162,12 +201,21 @@
 	const files = 'abcdefgh';
 
 	onMount(() => {
-		game = new Chess(fen);
-		updateBoard();
-		turn = game.turn();
-		moveHistory = game.history({ verbose: true }); // Initialize move history on page load
+		game = new Chess();
+		if (gameId) {
+			loadGameData(gameId);
+		} else {
+			game.load(fen);
+			updateBoard();
+			turn = game.turn();
+			moveHistory = game.history({ verbose: true });
+		}
 	});
-
+	$: if (gameId) {
+		if (channel) {
+			supabaseClient.removeChannel(channel);
+		}
+	}
 	function getLegalMoves(square: string): string[] {
 		try {
 			const moves = game.moves({ square: square as Square, verbose: true }) as Move[];
@@ -218,10 +266,20 @@
 	}
 
 	async function makeMove(from: string, to: string) {
+		const isWhiteTurn = game.turn() === 'w';
+		const expectedPlayerId = isWhiteTurn ? whitePlayerId : blackPlayerId;
+
+		if (currentUserId !== expectedPlayerId) {
+			statusMessage = "It's not your turn.";
+			playErrorSound();
+			return;
+		}
+
 		const move = game.move({ from, to, promotion: 'q' }); // Try default first
+
 		if (move) {
+			// Handle promotion separately
 			if (move.flags.includes('p') && (to[1] === '8' || to[1] === '1')) {
-				// Undo last move and open modal
 				game.undo();
 				promotionFrom = from;
 				promotionTo = to;
@@ -232,9 +290,8 @@
 			const fen = game.fen();
 			turn = game.turn();
 			await saveMove(fen, turn);
-			moveHistory = game.history({ verbose: true }); // Update move history after a move
+			moveHistory = game.history({ verbose: true });
 			updateBoard();
-
 			if (game.isGameOver()) {
 				if (game.isCheckmate()) {
 					playGameOverSound();
@@ -261,21 +318,33 @@
 		const history = game.history(); // Array of SAN strings
 		const lastMove = history[history.length - 1];
 
-		// Insert move into `moves` table
-		const { error: moveInsertError } = await supabaseClient.from('games').insert([
-			{
-				moves: lastMove,
-				fen,
-				current_turn: nextTurn
-			}
-		]);
+		if (!gameId) {
+			console.error('No gameId provided, cannot update game.');
+			return;
+		}
 
-		if (moveInsertError) {
-			console.error('Failed to insert move into games table:', moveInsertError.message);
+		const { error } = await supabaseClient
+			.from('games')
+			.update({
+				fen,
+				current_turn: nextTurn,
+				moves: lastMove // optional, if you store moves in `games` table
+			})
+			.eq('id', gameId);
+
+		if (error) {
+			console.error('❌ Failed to update game with move:', error.message);
 		}
 	}
 
 	async function promotePawn(piece: string) {
+		const expectedPlayerId = game.turn() === 'w' ? whitePlayerId : blackPlayerId;
+		if (currentUserId !== expectedPlayerId) {
+			statusMessage = "It's not your turn.";
+			playErrorSound();
+			return;
+		}
+
 		if (promotionFrom && promotionTo) {
 			const move = game.move({ from: promotionFrom, to: promotionTo, promotion: piece });
 
@@ -333,18 +402,30 @@
 			return;
 		}
 
+		// 🚫 Can't click empty square
 		if (!piece) return;
 
+		// 🔒 Enforce turn-based player permissions
 		const isWhiteTurn = game.turn() === 'w';
-		const isWhitePieceTurn = isWhiteTurn && isWhitePiece(piece);
-		const isBlackPieceTurn = !isWhiteTurn && !isWhitePiece(piece);
+		const isCurrentUserWhite = currentUserId === whitePlayerId;
+		const isCurrentUserBlack = currentUserId === blackPlayerId;
 
-		if (!isWhitePieceTurn && !isBlackPieceTurn) {
-			playErrorSound(); // 🔊 Add this line for sound feedback
-			statusMessage = 'Not your turn!';
+		// Check if it's user's turn
+		if ((isWhiteTurn && !isCurrentUserWhite) || (!isWhiteTurn && !isCurrentUserBlack)) {
+			statusMessage = "It's not your turn.";
+			playErrorSound();
 			return;
 		}
 
+		// 🔍 Only allow selecting user's own pieces
+		const pieceIsWhite = isWhitePiece(piece); // ✅ renamed variable
+		if ((isCurrentUserWhite && !pieceIsWhite) || (isCurrentUserBlack && pieceIsWhite)) {
+			statusMessage = "Can't move foe's piece.";
+			playErrorSound();
+			return;
+		}
+
+		// ✅ Select square and show legal moves
 		selectedSquare = square;
 		legalMoves = getLegalMoves(square);
 		playSelectSound();
@@ -353,6 +434,78 @@
 	function isWhitePiece(piece: string): boolean {
 		return ['♖', '♘', '♗', '♕', '♔', '♙'].includes(piece);
 	}
+
+	const channel = supabaseClient
+		.channel('games')
+		.on(
+			'postgres_changes',
+			{
+				event: 'UPDATE',
+				schema: 'public',
+				table: 'games',
+				filter: `id=eq.${gameId}`
+			},
+			(payload) => {
+				const updatedFen = payload.new.fen;
+				const updatedTurn = payload.new.turn;
+
+				// Update local state
+				game.load(updatedFen);
+				updateBoard(); // Refresh the board view
+				turn = game.turn();
+				moveHistory = game.history({ verbose: true }); // Update move history
+				turn = updatedTurn;
+			}
+		)
+		.subscribe();
+	import { page } from '$app/stores';
+	import { get } from 'svelte/store';
+
+	let currentGameId = gameId; // track current gameId internally
+
+	$: if (gameId && currentGameId !== gameId) {
+		currentGameId = gameId;
+		loadGameData(currentGameId);
+	}
+
+	async function loadGameData(id: string) {
+		loading = true;
+		const { data: gameData, error } = await supabaseClient
+			.from('games')
+			.select('fen, current_turn, white_player_id, black_player_id, moves')
+			.eq('id', id)
+			.single();
+
+		if (error) {
+			console.error('Failed to load game:', error.message);
+			loading = false;
+			return;
+		}
+
+		if (gameData?.fen) {
+			game.load(gameData.fen);
+		} else {
+			game.reset();
+		}
+
+		turn = gameData.current_turn;
+		moveHistory = game.history({ verbose: true });
+
+		updateBoard();
+		loading = false;
+	}
+	onMount(() => {
+		const stored = localStorage.getItem('selectedOpponent');
+		if (stored) {
+			try {
+				selectedOpponent = JSON.parse(stored);
+			} catch (e) {
+				console.error('Failed to parse selectedOpponent:', e);
+			}
+			// Clear it to prevent reuse in later games
+			localStorage.removeItem('selectedOpponent');
+		}
+	});
 </script>
 
 <div class="flex min-h-screen flex-row items-center gap-x-[200px] bg-gray-100 pl-10">
@@ -366,16 +519,30 @@
 		<div class="mt-6 w-[250px] text-center">
 			<h2 class="mb-2 text-lg font-bold text-gray-800">Play With:</h2>
 			<ul class="space-y-2">
-				{#each data.users as user}
-					<li>
-						<button
-							on:click={() => startGame(user.id, user)}
-							class="w-full cursor-pointer rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-						>
-							{user.username}
-						</button>
-					</li>
-				{/each}
+				{#if data?.users && Array.isArray(data.users)}
+					<ul class="space-y-2">
+						{#each data.users as user (user.id)}
+							{@const isCurrentOpponent = user.id === whitePlayerId || user.id === blackPlayerId}
+							<li>
+								<button
+									disabled={isCurrentOpponent}
+									on:click={() => !isCurrentOpponent && startGame(user.id, user)}
+									class={`w-full rounded px-3 py-1 text-sm text-white transition
+        ${
+					isCurrentOpponent
+						? 'cursor-not-allowed bg-gray-400'
+						: 'cursor-pointer bg-blue-500 hover:bg-blue-600'
+				}
+      `}
+								>
+									{user.username}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="text-sm text-gray-500">No users available to play.</p>
+				{/if}
 			</ul>
 		</div>
 

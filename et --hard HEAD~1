@@ -1,0 +1,77 @@
+[33mcommit 1ce1f4ffcfcdd1cc3841b46e051b7810fae61d30[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcode-changes[m[33m, [m[1;31morigin/code-changes[m[33m)[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Thu May 8 18:31:56 2025 +0500
+
+    added accounts
+
+[33mcommit bae8b1b9a84c3eca067f86d826616d88506bb103[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Thu May 8 13:58:05 2025 +0500
+
+    added sounds
+
+[33mcommit 44f8f649ab13d8ed19351501881f68ada64a30f2[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Thu May 8 11:37:53 2025 +0500
+
+    auth is functioning as intended, now just the games part left
+
+[33mcommit 11db88840cef1ac7ebc2002d01b6a66f43901d4e[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Tue May 6 17:34:23 2025 +0500
+
+    added auth pages and fixed the favicon issue
+
+[33mcommit 8e4c743f2b006b6439fdcbad03bd5049383540aa[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Mon May 5 17:34:38 2025 +0500
+
+    added game history
+
+[33mcommit 22d71afa7322efa3fdbe847f458cd48d5b26b428[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Tue Apr 29 17:47:48 2025 +0500
+
+    implemented 1,2, 3 in previous commit. implemented 4 and 6 in the current commit, tried implementing sound files but can't hear them, will resolve it later
+
+[33mcommit 098457a5e1902525304860cce72d2b3a4b0c7993[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Tue Apr 29 13:38:46 2025 +0500
+
+    implemented a few new things
+
+[33mcommit 10bef3f13380b5086f2398cb3bd32ef60c117c2c[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Thu Apr 24 15:50:38 2025 +0500
+
+    completed the first build
+
+[33mcommit 871b84abc12cb46151b36c0c5eb497dbee2222ab[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Mon Apr 21 17:44:35 2025 +0500
+
+    finally did the basic ui for chess board, now time to head on to logic and SQL
+
+[33mcommit b7011329542610d52742b2d22e5262ca339da45b[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Mon Apr 21 17:36:44 2025 +0500
+
+    remade chess board ui without pieces
+
+[33mcommit 7ec99146cc21252822b9329a665b80c9220f4a99[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Mon Apr 14 12:43:44 2025 +0500
+
+    tried adding logic for pieces to appear, have to complete that
+
+[33mcommit 90541666c603d03845dbec87647b9701d43a8e63[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Mon Apr 14 12:02:58 2025 +0500
+
+    added the chess board ui
+
+[33mcommit 50e084ae2be7570a71c346b4610f0ae1b332ecdb[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmaster[m[33m)[m
+Author: Ibrahim Ahmad <ibrahimahmad77977@gmail.com>
+Date:   Fri Apr 11 16:37:30 2025 +0500
+
+    initial setup
